@@ -1,85 +1,92 @@
 # lab4_pi_integration.py
-from mpi4py import MPI
 import math
-import time
+
+from mpi4py import MPI
+
+DEFAULT_INTERVALS = 10_000_000
+A = 0.0
+B = 1.0
+
 
 def f(x):
     """Function to integrate: 4 / (1 + x*x)."""
     return 4.0 / (1.0 + x * x)
 
-def compute_local_integral(local_n, local_a, h):
-    """
-    Trapezoidal-rule integral over this rank's sub-interval.
 
-    Parameters
-    ----------
-    local_n : int
-        Number of trapezoids handled by this rank.
-    local_a : float
-        Start of this rank's sub-interval.
-    h : float
-        Width of each trapezoid.
-    """
-    # --- TODO: Task 3 — Implement the trapezoidal rule locally ---
-    # local_b = local_a + local_n * h
-    # integral = (f(local_a) + f(local_b)) / 2.0
-    # for i in range(1, local_n):
-    #     integral += f(local_a + i * h)
-    # return integral * h
+def validate_interval_count(n_total):
+    """Require a positive integer number of integration intervals."""
+    if isinstance(n_total, bool) or not isinstance(n_total, int) or n_total <= 0:
+        raise ValueError("The number of intervals must be a positive integer")
+
+
+def broadcast_interval_count(comm, rank):
+    """Broadcast the total interval count from rank 0 to every rank."""
+    n_total = DEFAULT_INTERVALS if rank == 0 else None
+
+    # --- TODO: Task 1 - Broadcast n_total from rank 0 and return it ---
+    # All ranks must participate in the same collective call.
     # --- End TODO ---
-    return 0.0  # Placeholder so the starter runs; replace with the code above.
+    raise NotImplementedError("Complete Task 1: broadcast_interval_count")
 
-if __name__ == "__main__":
+
+def decompose_intervals(n_total, rank, size, a=A, b=B):
+    """Return (local_n, local_a, h) for this rank's contiguous block."""
+    # --- TODO: Task 2 - Compute this rank's block decomposition ---
+    # Compute h, the even base workload, remainder distribution, this
+    # rank's starting interval index, and local_a. Return local_n, local_a, h.
+    # --- End TODO ---
+    raise NotImplementedError("Complete Task 2: decompose_intervals")
+
+
+def compute_local_integral(local_n, local_a, h):
+    """Compute this rank's trapezoidal-rule partial integral."""
+    # --- TODO: Task 3 - Implement the local trapezoidal rule ---
+    # Handle zero-work ranks, then apply the trapezoidal rule over this
+    # rank's contiguous sub-interval and return the partial integral.
+    # --- End TODO ---
+    raise NotImplementedError("Complete Task 3: compute_local_integral")
+
+
+def reduce_integrals(comm, local_integral):
+    """Sum all local partial integrals on rank 0."""
+    # --- TODO: Task 4 - Reduce all local values with MPI.SUM to rank 0 ---
+    # --- End TODO ---
+    raise NotImplementedError("Complete Task 4: reduce_integrals")
+
+
+def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-    # Interval [a, b]
-    a = 0.0
-    b = 1.0
+    n_total = broadcast_interval_count(comm, rank)
+    validate_interval_count(n_total)
 
-    # Total number of trapezoids (adjust for your machine)
-    N = 10_000_000
+    local_n, local_a, h = decompose_intervals(
+        n_total, rank, size, A, B
+    )
 
-    # --- Task 1 — Broadcast N ---
-    if rank == 0:
-        print(f"Broadcasting N = {N} to {size} processes...")
-    n_total = comm.bcast(N if rank == 0 else None, root=0)
+    # Synchronize immediately before timing so ranks start the measured
+    # computation from the same phase of the program.
+    comm.Barrier()
+    start_time = MPI.Wtime()
 
-    # --- Task 2 — Determine local workload ---
-    h = (b - a) / n_total
-    intervals_per_process = n_total // size
-    remainder = n_total % size
-
-    # Distribute any remainder to lower ranks
-    local_n = intervals_per_process + (1 if rank < remainder else 0)
-
-    # Compute this rank's starting index then its local 'a'
-    start_interval_index = rank * intervals_per_process + min(rank, remainder)
-    local_a = a + start_interval_index * h
-    # local_b = local_a + local_n * h  # Not required below, shown for clarity
-
-    # Start timing after setup
-    start_time = time.perf_counter()
-
-    # --- Task 4 — Compute local integral ---
     local_integral = compute_local_integral(local_n, local_a, h)
+    global_integral = reduce_integrals(comm, local_integral)
 
-    # --- Task 4/5 — Reduce partial sums to root ---
-    global_integral_sum = comm.reduce(local_integral, op=MPI.SUM, root=0)
+    end_time = MPI.Wtime()
 
-    end_time = time.perf_counter()
-
-    # --- Task 5 — Print result on root ---
     if rank == 0:
-        pi_approx = global_integral_sum
-        error = abs(pi_approx - math.pi)
-        total_time = end_time - start_time
-        print("-" * 30)
-        print(f"Pi approximation: {pi_approx:.15f}")
+        error = abs(global_integral - math.pi)
+        print("-" * 40)
+        print(f"Pi approximation: {global_integral:.15f}")
         print(f"Actual Pi:        {math.pi:.15f}")
         print(f"Error:            {error:.2e}")
-        print(f"Execution time:   {total_time:.4f} seconds")
+        print(f"Execution time:   {end_time - start_time:.4f} seconds")
         print(f"Intervals:        {n_total}")
         print(f"Processes:        {size}")
-        print("-" * 30)
+        print("-" * 40)
+
+
+if __name__ == "__main__":
+    main()
